@@ -1,146 +1,164 @@
 # jieba-mcp
 
-基于 jieba 中文分词的 MCP (Model Context Protocol) 服务器，使用 FastMCP 框架构建。
+<!-- mcp-name: io.github.BACH-AI-Tools/jieba -->
 
-## 项目简介
+**English** | [简体中文](README.zh-CN.md)
 
-这是一个 MCP 服务器，提供中文文本分词功能。通过 FastMCP 框架将 jieba 分词能力封装为标准的 MCP 工具，可以被支持 MCP 协议的客户端（如 Claude Desktop）调用。
+Chinese text processing for any MCP client: word segmentation, keyword extraction, part-of-speech tagging, a user dictionary and Simplified/Traditional conversion. It is built on [jieba](https://github.com/fxsjy/jieba) and runs locally over stdio with a single `uvx jieba-mcp`.
 
-## 功能特性
+LLMs can read Chinese, but they cannot reliably count, split or rank Chinese words. These tools give them deterministic answers that are the same on every run.
 
-- 支持三种分词模式：
-  - **精确模式**（默认）：试图将句子最精确地切开，适合文本分析
-  - **全模式**：把句子中所有的可以成词的词语都扫描出来
-  - **搜索引擎模式**：在精确模式的基础上，对长词再次切分，提高召回率
-- 自动过滤空白字符
-- 基于 SSE (Server-Sent Events) 传输协议
-- Docker 容器化部署支持
+## Tools
 
-## 安装和使用
+| Tool | What it does |
+|---|---|
+| `segment` | Split text into words. Modes: `precise` (default), `full`, `search` |
+| `extract_keywords` | Top keywords by `tfidf` (default) or `textrank`, with optional weights and POS filter |
+| `pos_tag` | Words plus part-of-speech tags (`n`, `v`, `ns`, `nr`, …) |
+| `add_user_words` | Add domain words (names, jargon, brands) so later calls keep them whole |
+| `convert_chinese` | Simplified ⇄ Traditional via OpenCC configs (`s2t`, `t2s`, `s2tw`, `tw2s`, `s2twp`, `tw2sp`, `s2hk`, `hk2s`) |
 
-### 1. 直接运行
+Every tool returns structured JSON (`structuredContent`) and declares an output schema. Parameters are described in each tool's JSON Schema, so clients can show them.
 
-```bash
-# 安装依赖
-pip install -r requirements.txt
+## Install
 
-# 启动服务器
-python main.py
-```
-
-### 2. Docker 部署
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-# 构建镜像
-docker build -t jieba-mcp .
-
-# 运行容器
-docker run -p 9998:9998 jieba-mcp
+uvx jieba-mcp            # runs the server on stdio
 ```
 
-## API 文档
+Until the package is on PyPI, run it from GitHub instead: `uvx --from git+https://github.com/BACH-AI-Tools/jieba-mcp jieba-mcp`.
 
-### jieba_segment 工具
+### Claude Desktop
 
-对中文文本进行分词处理。
+Add to `claude_desktop_config.json`:
 
-**参数：**
-- `text` (str): 待分词的中文文本
-- `mode` (str, 可选): 分词模式，默认为 "precise"
-  - `"precise"`: 精确模式
-  - `"full"`: 全模式
-  - `"search"`: 搜索引擎模式
-
-**返回值：**
-- `List[str]`: 分词后的词语列表（已去除空白字符）
-
-**示例：**
-```python
-# 精确模式
-jieba_segment("我来到北京清华大学")
-# 返回: ["我", "来到", "北京", "清华大学"]
-
-# 全模式
-jieba_segment("我来到北京清华大学", mode="full")
-# 返回: ["我", "来到", "北京", "清华", "清华大学", "华大", "大学"]
-
-# 搜索引擎模式
-jieba_segment("小明硕士毕业于中国科学院计算所", mode="search")
-# 返回: ["小明", "硕士", "毕业", "于", "中国", "科学", "学院", "科学院", "中国科学院", "计算", "计算所"]
+```json
+{
+  "mcpServers": {
+    "jieba": {
+      "command": "uvx",
+      "args": ["jieba-mcp"]
+    }
+  }
+}
 ```
 
-## 项目结构
+### Cursor
 
-```
-jieba-mcp/
-├── main.py              # 主程序文件
-├── requirements.txt     # Python 依赖包
-├── Dockerfile          # Docker 构建文件
-└── README.md           # 项目说明文档
-```
+Add the same block to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project).
 
-## 技术栈
+### Claude Code
 
-- **Python 3.11+**: 主要编程语言
-- **jieba**: 中文分词库
-- **FastMCP**: MCP 服务器框架
-- **Docker**: 容器化部署
-
-## 配置
-
-服务器默认配置：
-- **主机**: `0.0.0.0`
-- **端口**: `9998`
-- **传输协议**: SSE (Server-Sent Events)
-
-如需修改配置，请编辑 [`main.py`](main.py) 文件中的相关参数。
-
-## 开发
-
-### 本地开发环境搭建
-
-1. 克隆项目：
 ```bash
-git clone <repository-url>
+claude mcp add jieba -- uvx jieba-mcp
+```
+
+### HTTP transports (optional)
+
+```bash
+jieba-mcp --transport streamable-http --port 9998   # http://127.0.0.1:9998/mcp
+jieba-mcp --transport sse --port 9998               # http://127.0.0.1:9998/sse
+```
+
+`--host` defaults to `127.0.0.1`. The Docker image serves SSE on `0.0.0.0:9998`:
+
+```bash
+docker build -t jieba-mcp . && docker run -p 9998:9998 jieba-mcp
+```
+
+## Examples
+
+The outputs below are real `structuredContent` returned over stdio by version 1.0.0. The first call takes about a second while jieba loads its dictionary.
+
+### `segment`
+
+```json
+{"text": "我来到北京清华大学"}
+→ {"mode": "precise", "tokens": ["我", "来到", "北京", "清华大学"], "count": 4}
+
+{"text": "我来到北京清华大学", "mode": "full"}
+→ {"mode": "full", "tokens": ["我", "来到", "北京", "清华", "清华大学", "华大", "大学"], "count": 7}
+
+{"text": "小明硕士毕业于中国科学院计算所", "mode": "search"}
+→ {"mode": "search", "tokens": ["小明", "硕士", "毕业", "于", "中国", "科学", "学院", "科学院", "中国科学院", "计算", "计算所"], "count": 11}
+```
+
+Set `"hmm": false` to turn off jieba's HMM model, which joins unknown words.
+
+### `extract_keywords`
+
+```json
+{"text": "我来到北京清华大学，清华大学是一所综合性大学", "top_k": 3}
+→ {"method": "tfidf", "keywords": [
+     {"word": "清华大学", "weight": 2.308741},
+     {"word": "一所", "weight": 1.115948},
+     {"word": "综合性", "weight": 1.044143}]}
+
+{"text": "线程是程序执行中一个单一的顺序控制流程，进程内有一个或多个线程，线程共享进程的资源",
+ "top_k": 3, "method": "textrank"}
+→ {"method": "textrank", "keywords": [
+     {"word": "线程", "weight": 1.0},
+     {"word": "进程", "weight": 0.7957},
+     {"word": "共享", "weight": 0.504354}]}
+```
+
+Options:
+- `with_weight: false` returns words only, and each `weight` is `null`.
+- `allow_pos` keeps only the listed tags. For example, `["ns"]` keeps only place names.
+- TextRank defaults to `["ns", "n", "vn", "v"]`.
+
+### `pos_tag`
+
+```json
+{"text": "我爱北京天安门"}
+→ {"tokens": [{"word": "我", "flag": "r"}, {"word": "爱", "flag": "v"},
+              {"word": "北京", "flag": "ns"}, {"word": "天安门", "flag": "ns"}], "count": 4}
+```
+
+Tags follow jieba's ICTCLAS-compatible set; see the [jieba README](https://github.com/fxsjy/jieba).
+
+### `add_user_words`
+
+```json
+segment {"text": "大语言模型正在改变检索增强生成"}
+→ {"tokens": ["大", "语言", "模型", "正在", "改变", "检索", "增强", "生成"], ...}
+
+add_user_words {"words": [{"word": "大语言模型", "tag": "nz"}, {"word": "检索增强生成"}]}
+→ {"added": ["大语言模型", "检索增强生成"], "count": 2}
+
+segment {"text": "大语言模型正在改变检索增强生成"}
+→ {"tokens": ["大语言模型", "正在", "改变", "检索增强生成"], ...}
+
+pos_tag {"text": "大语言模型正在改变检索增强生成"}
+→ {"tokens": [{"word": "大语言模型", "flag": "nz"}, {"word": "正在", "flag": "t"},
+              {"word": "改变", "flag": "v"}, {"word": "检索增强生成", "flag": "x"}], ...}
+```
+
+- **Where the words live:** in the server process's memory only. They apply to all later calls and to every client of that process. They are lost when the process restarts, and nothing is written to disk.
+- **Tags:** give a `tag` if you want `pos_tag` to label the word; words added without one are tagged `x`.
+- **Frequency:** `freq` is optional. If you omit it, jieba picks one that keeps the word whole.
+
+### `convert_chinese`
+
+```json
+{"text": "软件和鼠标", "config": "s2twp"}  → {"config": "s2twp", "text": "軟體和滑鼠"}
+{"text": "漢字轉換", "config": "t2s"}      → {"config": "t2s", "text": "汉字转换"}
+```
+
+## Development
+
+```bash
+git clone https://github.com/BACH-AI-Tools/jieba-mcp.git
 cd jieba-mcp
+pip install -e '.[test]'
+pytest                       # tool tests + a real stdio session via the MCP client
 ```
 
-2. 创建虚拟环境：
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate     # Windows
-```
+## License and acknowledgements
 
-3. 安装依赖：
-```bash
-pip install -r requirements.txt
-```
-
-4. 启动开发服务器：
-```bash
-python main.py
-```
-
-### MCP 客户端集成
-
-要在支持 MCP 的客户端（如 Claude Desktop）中使用此服务器：
-
-1. 启动 jieba-mcp 服务器
-2. 在客户端配置中添加 MCP 服务器连接
-3. 指定服务器地址为 `http://localhost:9998`
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request 来改进这个项目。
-
-## 许可证
-
-本项目采用 MIT 许可证。详情请参阅 LICENSE 文件。
-
-## 相关链接
-
-- [jieba](https://github.com/fxsjy/jieba) - 中文分词库
-- [FastMCP](https://github.com/jlowin/fastmcp) - MCP 服务器框架
-- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP 协议规范
+- MIT, see [LICENSE](LICENSE).
+- [jieba](https://github.com/fxsjy/jieba) by Sun Junyi (fxsjy), MIT License. It does all of the segmentation, tagging and keyword work.
+- [opencc-python-reimplemented](https://github.com/yichen0831/opencc-python), Apache-2.0. It is a pure-Python port of [OpenCC](https://github.com/BYVoid/OpenCC) and provides `convert_chinese`.
+- The [Model Context Protocol](https://modelcontextprotocol.io/) Python SDK.

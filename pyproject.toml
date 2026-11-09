@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jieba-mcp"
+version = "1.0.0"
+description = "Chinese text toolkit for MCP clients: jieba segmentation, keyword extraction, POS tagging, user dictionary and Simplified/Traditional conversion."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "BACH-AI-Tools" }]
+keywords = ["mcp", "jieba", "chinese", "segmentation", "nlp", "keywords", "pos-tagging", "opencc"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Natural Language :: Chinese (Simplified)",
+    "Natural Language :: Chinese (Traditional)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "jieba>=0.42.1,<0.43",
+    "mcp>=1.22,<2",
+    "opencc-python-reimplemented>=0.1.7,<0.2",
+    "pydantic>=2.11,<3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "anyio>=4"]
+
+[project.scripts]
+jieba-mcp = "jieba_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/BACH-AI-Tools/jieba-mcp"
+Repository = "https://github.com/BACH-AI-Tools/jieba-mcp"
+Issues = "https://github.com/BACH-AI-Tools/jieba-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jieba_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
